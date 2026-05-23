@@ -48,6 +48,26 @@ def create_book(book: BookCreate):
     return new_book
 
 
+# Literal route must come before the dynamic /books/{book_id},
+# otherwise FastAPI matches "stats" as a book_id and 422s on int parsing.
+@app.get("/books/stats")
+def get_stats():
+    total = len(books_db)
+    by_status: dict[str, int] = {}
+    for b in books_db:
+        by_status[b["status"]] = by_status.get(b["status"], 0) + 1
+
+    rated = [b["rating"] for b in books_db if b["status"] == "read" and b["rating"] is not None]
+    average_rating = round(sum(rated) / len(rated), 2) if rated else None
+
+    return {
+        "total": total,
+        "by_status": by_status,
+        "average_rating": average_rating,
+        "rated_count": len(rated),
+    }
+
+
 @app.get("/books/{book_id}")
 def get_book(book_id: int):
     for b in books_db:
