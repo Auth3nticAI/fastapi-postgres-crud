@@ -1,25 +1,16 @@
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="Book Tracker API", version="1.0.0")
+from database import Base, engine, get_db
+from models import Book
+from schemas import BookCreate, BookResponse, BookUpdate
 
+Base.metadata.create_all(bind=engine)
 
-class BookCreate(BaseModel):
-    title: str
-    author: str
-    status: str = "want_to_read"  # "reading", "read", "want_to_read"
-    rating: Optional[int] = None  # 1-5, only if status is "read"
-
-
-class BookUpdate(BaseModel):
-    status: Optional[str] = None
-    rating: Optional[int] = None
-
-
-books_db: list[dict] = []
-next_id = 1
+app = FastAPI(title="Book Tracker API", version="2.0.0")
 
 
 @app.get("/")
@@ -32,66 +23,86 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/books")
-def get_books(status: Optional[str] = None):
+@app.get("/books", response_model=list[BookResponse])
+def get_books(status: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(Book)
     if status:
-        return [b for b in books_db if b["status"] == status]
-    return books_db
+        query = query.filter(Book.status == status)
+    return query.all()
 
 
-@app.post("/books", status_code=201)
-def create_book(book: BookCreate):
-    global next_id
-    new_book = {"id": next_id, **book.model_dump()}
-    books_db.append(new_book)
-    next_id += 1
-    return new_book
+@app.post("/books", response_model=BookResponse, status_code=201)
+def create_book(data: BookCreate, db: Session = Depends(get_db)):
+    book = Book(**data.model_dump())
+    db.add(book)
+    db.commit()
+    db.refresh(book)
+    return book
 
 
 # Literal route must come before the dynamic /books/{book_id},
 # otherwise FastAPI matches "stats" as a book_id and 422s on int parsing.
 @app.get("/books/stats")
-def get_stats():
-    total = len(books_db)
-    by_status: dict[str, int] = {}
-    for b in books_db:
-        by_status[b["status"]] = by_status.get(b["status"], 0) + 1
+def get_stats(db: Session = Depends(get_db)):
+    total = db.query(Book).count()
 
-    rated = [b["rating"] for b in books_db if b["status"] == "read" and b["rating"] is not None]
-    average_rating = round(sum(rated) / len(rated), 2) if rated else None
+    by_status_rows = (
+        db.query(Book.status, func.count(Book.id))
+        .group_by(Book.status)
+        .all()
+    )
+    by_status = {status: count for status, count in by_status_rows}
+
+    rated_query = db.query(Book).filter(
+        Book.status == "read", Book.rating.isnot(None)
+    )
+    rated_count = rated_query.count()
+    avg = (
+        db.query(func.avg(Book.rating))
+        .filter(Book.status == "read", Book.rating.isnot(None))
+        .scalar()
+    )
+    average_rating = round(float(avg), 2) if avg is not None else None
 
     return {
         "total": total,
         "by_status": by_status,
         "average_rating": average_rating,
-        "rated_count": len(rated),
+        "rated_count": rated_count,
     }
 
 
-@app.get("/books/{book_id}")
-def get_book(book_id: int):
-    for b in books_db:
-        if b["id"] == book_id:
-            return b
-    raise HTTPException(status_code=404, detail="Book not found")
+@app.get("/books/{book_id}", response_model=BookResponse)
+def get_book(book_id: int, db: Session = Depends(get_db)):
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return book
 
 
-@app.put("/books/{book_id}")
-def update_book(book_id: int, updates: BookUpdate):
-    for b in books_db:
-        if b["id"] == book_id:
-            if updates.status is not None:
-                b["status"] = updates.status
-            if updates.rating is not None:
-                b["rating"] = updates.rating
-            return b
-    raise HTTPException(status_code=404, detail="Book not found")
+@app.put("/books/{book_id}", response_model=BookResponse)
+def update_book(book_id: int, updates: BookUpdate, db: Session = Depends(get_db)):
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    if updates.status is not None:
+        book.status = updates.status
+    if updates.rating is not None:
+        book.rating = updates.rating
+
+    db.commit()
+    db.refresh(book)
+    return book
 
 
 @app.delete("/books/{book_id}")
-def delete_book(book_id: int):
-    for i, b in enumerate(books_db):
-        if b["id"] == book_id:
-            removed = books_db.pop(i)
-            return {"message": f"Deleted '{removed['title']}'", "id": book_id}
-    raise HTTPException(status_code=404, detail="Book not found")
+def delete_book(book_id: int, db: Session = Depends(get_db)):
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    title = book.title
+    db.delete(book)
+    db.commit()
+    return {"message": f"Deleted '{title}'", "id": book_id}
