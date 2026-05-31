@@ -1,32 +1,56 @@
-# Book Tracker API — Week 3
+# Book Tracker API — Week 4
 
-A small FastAPI REST API for tracking books — read, reading, or want to read.
-In-memory storage (resets on restart); persistence comes in Week 4.
+Backend for the Book Tracker app. Upgrade from Week 3's in-memory Python list to a real Postgres-backed service.
 
-## Run it
+## Stack
+
+- **FastAPI** for the HTTP layer
+- **SQLAlchemy** ORM
+- **PostgreSQL 16** via Docker Compose
+- **Pydantic** for request/response validation
+- `python-dotenv` for env loading
+
+## Layout
+
+```
+.
+├── main.py            # FastAPI app + route handlers
+├── database.py        # Engine, SessionLocal, Base, get_db dependency
+├── models.py          # SQLAlchemy ORM models
+├── schemas.py         # Pydantic request/response schemas
+├── docker-compose.yml # Postgres service
+└── requirements.txt
+```
+
+## Run
 
 ```bash
-python3 -m venv venv
+# 1. Start Postgres
+docker compose up -d db
+
+# 2. Activate venv and start the API
 source venv/bin/activate
-pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-- Welcome: <http://localhost:8000/>
-- Interactive docs: <http://localhost:8000/docs>
+Open http://localhost:8000/docs for the Swagger UI.
 
 ## Endpoints
 
-| Method | Path                       | Description                                |
-|--------|----------------------------|--------------------------------------------|
-| GET    | `/`                        | Welcome message                            |
-| GET    | `/health`                  | Liveness probe                             |
-| GET    | `/books`                   | List all books; `?status=` filter optional |
-| POST   | `/books`                   | Create a book (201)                        |
-| GET    | `/books/stats`             | Counts by status + average rating          |
-| GET    | `/books/{book_id}`         | Fetch one book (404 if missing)            |
-| PUT    | `/books/{book_id}`         | Partial update of status and/or rating     |
-| DELETE | `/books/{book_id}`         | Remove a book                              |
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | Health check |
+| GET | `/books` | List all books (filter by `?status=`) |
+| POST | `/books` | Create a book |
+| GET | `/books/stats` | Aggregate stats (count, by status, avg rating) |
+| GET | `/books/{id}` | Read one book |
+| PUT | `/books/{id}` | Update status / rating |
+| DELETE | `/books/{id}` | Delete a book |
 
-`/books/stats` is intentionally declared before `/books/{book_id}` so the
-literal route wins the match.
+## Environment
+
+Create `.env` (gitignored):
+
+```
+DATABASE_URL=postgresql://postgres:password@localhost:5432/booktracker
+```

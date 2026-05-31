@@ -1,36 +1,37 @@
-# Week 3 Reflection
+# Week 4 Reflection
 
-## 1. What was the most confusing thing about Python compared to JavaScript?
+## 1. What is the difference between the SQLAlchemy model and the Pydantic schema?
 
-Indentation as syntax. In JS, whitespace is decorative — braces define blocks. In
-Python, the indentation *is* the block, so a stray space or a tab/space mix is a
-parse error, not a style issue. The other adjustment was decorators (`@app.get(...)`)
-and the fact that there's no `function` keyword or `;` line terminators. The flow
-feels lighter once it clicks but the silence around block boundaries is
-disorienting at first.
+The SQLAlchemy model (`models.Book`) describes the **database row** — column names, types, constraints, indexes. It exists so the ORM knows how to map between Python objects and Postgres tables.
 
-## 2. What does an HTTP status code tell you? Give one example.
+The Pydantic schemas (`schemas.BookCreate`, `BookUpdate`, `BookResponse`) describe the **shape of data crossing the HTTP boundary** — what a client may send, what they may update, what they receive back. They validate request bodies and serialize responses.
 
-It's a one-line summary of what happened to the request, agreed on by every web
-client and server. 2xx = it worked, 4xx = the caller did something wrong, 5xx =
-the server broke. Example: `GET /books/999` on a missing book returns `404 Not
-Found` — the route exists but the resource doesn't, so the client knows the
-problem is the id, not the URL or the server.
+They look similar because they're describing the same domain object (a Book), but they answer different questions: *how is it stored* vs. *how is it transmitted*. Keeping them separate means I can have an internal `created_at` column without exposing it in a response, or accept a partial `BookUpdate` that wouldn't be valid as a full DB insert.
 
-## 3. What was the difference between a path parameter and a query parameter?
+## 2. What does `Depends(get_db)` do? Why does every endpoint need it?
 
-Path parameters are part of the URL itself and identify *which* resource —
-`/books/2` means "the book with id 2." They're typically required and the route
-won't match without them. Query parameters come after `?` and *modify* a request
-on a route that already makes sense without them — `/books?status=reading` says
-"list books, but filter to reading." In FastAPI, function arguments that appear
-inside `{}` in the path string become path params; everything else becomes a
-query param.
+`Depends(get_db)` is FastAPI's dependency injection — for each request, FastAPI calls `get_db()`, hands the yielded `Session` to the endpoint, and then runs the `finally:` block to close the session after the response is sent.
 
-## 4. What happens to the data if the server restarts?
+Every endpoint needs it because:
+- Sessions are **per-request**. Sharing one global session across requests would interleave transactions and corrupt state under concurrency.
+- The `try / yield / finally` pattern guarantees the connection is returned to the pool even if the endpoint raises.
 
-It all disappears. `books_db = []` and `next_id = 1` live in process memory, so
-killing uvicorn wipes every book. That's a problem for anything beyond a demo —
-real apps need state to survive restarts, deploys, and crashes. The fix is a
-database. Next week (Week 4) we'll swap the in-memory list for PostgreSQL via
-SQLAlchemy, so writes persist to disk and survive restarts.
+It's the database equivalent of "open the file, do work, close the file" — abstracted so I never have to think about the close.
+
+## 3. When you restarted the server and your data was still there — how does that feel compared to storing data in a Python list?
+
+The Python-list version was a toy: every restart wiped everything, every concurrent request risked race conditions, and nothing would scale past one process. The Postgres version is the first time the API has felt like *a real system* — the data has an existence independent of the process serving it.
+
+Architecturally, the big shift is that the API is no longer the source of truth. It's a thin layer that translates HTTP requests into SQL, with the actual state living in a separate process (Postgres) that I can query directly, back up, replicate, or connect a different frontend to. The database becomes the contract; the API becomes a view onto it.
+
+## 4. What was the most confusing part of connecting the frontend to the backend?
+
+_To be added in Part 2 (frontend lab)._
+
+## 5. When does CORS become a problem and why? In your own words.
+
+_To be added in Part 2 (frontend lab)._
+
+## 6. What is the difference between `useEffect` with `[]` and without it?
+
+_To be added in Part 2 (frontend lab)._
