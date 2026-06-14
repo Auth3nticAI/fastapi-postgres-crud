@@ -1,5 +1,7 @@
 # FastAPI + Postgres CRUD
 
+![CI](https://github.com/Auth3nticAI/fastapi-postgres-crud/actions/workflows/ci.yml/badge.svg)
+
 > A clean FastAPI/SQLAlchemy/Postgres reference — `database.py` / `models.py` / `schemas.py` / `main.py` split, Pydantic validation at the boundary, full CRUD over a `books` resource. Data persists across server restarts via a Docker named volume.
 
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688?style=flat&logo=fastapi&logoColor=white)
